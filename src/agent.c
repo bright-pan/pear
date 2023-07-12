@@ -13,6 +13,7 @@
 #include "base64.h"
 #include "agent.h"
 #include "ports.h"
+#include "log.h"
 
 static int agent_get_host_candidates(Agent *agent) {
 
@@ -34,7 +35,7 @@ static void agent_get_stun_candidates(Agent *agent) {
 
   Address addr;
 
-  stun_get_local_address(STUN_IP, STUN_PORT, &addr);
+  stun_get_local_address_ex(STUN_IP, STUN_PORT, &addr);
 
   ice_candidate_create(&agent->local_candidates[agent->local_candidates_count++], ICE_CANDIDATE_TYPE_SRFLX, &addr);
 
@@ -55,6 +56,7 @@ void agent_gather_candidates(Agent *agent) {
 
   memset(agent->local_candidates, 0, sizeof(agent->local_candidates));
 
+  udp_socket_reset(&agent->udp_socket);
   udp_socket_open(&agent->udp_socket);
 
   ret = agent_get_host_candidates(agent);
@@ -96,7 +98,7 @@ void agent_get_local_description(Agent *agent, char *description, int length) {
 int agent_send(Agent *agent, const uint8_t *buf, int len) {
 
   //printf("send to ip: %d.%d.%d.%d:%d\n", agent->remote_candidates[0].addr.ipv4[0], agent->remote_candidates[0].addr.ipv4[1], agent->remote_candidates[0].addr.ipv4[2], agent->remote_candidates[0].addr.ipv4[3], agent->remote_candidates[0].addr.port);
-
+  
   //udp_socket_sendto(&agent->udp_socket, &agent->remote_candidates[0].addr, buf, len);
   return udp_socket_sendto(&agent->udp_socket, &agent->nominated_pair->remote->addr, buf, len);
 }
@@ -106,7 +108,7 @@ int agent_recv(Agent *agent, uint8_t *buf, int len) {
   int ret;
 
   memset(buf, 0, len); 
-  ret = udp_socket_recvfrom(&agent->udp_socket, &agent->nominated_pair->local->addr, buf, len);
+  ret = udp_socket_recv(&agent->udp_socket, buf, len);
   if (ret > 0) {
 
     StunMsgType type = stun_is_stun_msg(buf, ret);
@@ -169,7 +171,22 @@ int agent_recv(Agent *agent, uint8_t *buf, int len) {
   return -1;
 }
 
-
+void agent_add_remote_candidate(Agent *agent, char *candidate_string) {
+  if (ice_candidate_from_description(&agent->remote_candidates[agent->remote_candidates_count], candidate_string) == 0) {
+    agent->remote_candidates_count++;
+    // Please set gather candidates before set remote description
+    for (int i = 0; i < agent->local_candidates_count; i++) {
+      for (int j = 0; j < agent->remote_candidates_count; j++) {
+        agent->candidate_pairs[agent->candidate_pairs_num].local = &agent->local_candidates[i];
+        agent->candidate_pairs[agent->candidate_pairs_num].remote = &agent->remote_candidates[j];
+        agent->candidate_pairs[agent->candidate_pairs_num].priority = agent->local_candidates[i].priority + agent->remote_candidates[j].priority;
+        agent->candidate_pairs[agent->candidate_pairs_num].state = ICE_CANDIDATE_STATE_FROZEN;
+        ice_candidate_pair_print(&agent->candidate_pairs[agent->candidate_pairs_num]);
+        agent->candidate_pairs_num++;
+      }
+    }
+  }
+}
 
 void agent_set_remote_description(Agent *agent, char *description) {
 
@@ -209,13 +226,12 @@ a=candidate:1 1 UDP 1 36.231.28.50 38143 typ srflx
 
   // Please set gather candidates before set remote description
   for (i = 0; i < agent->local_candidates_count; i++) {
-
     for (j = 0; j < agent->remote_candidates_count; j++) {
-
       agent->candidate_pairs[agent->candidate_pairs_num].local = &agent->local_candidates[i];
       agent->candidate_pairs[agent->candidate_pairs_num].remote = &agent->remote_candidates[j];
       agent->candidate_pairs[agent->candidate_pairs_num].priority = agent->local_candidates[i].priority + agent->remote_candidates[j].priority;
       agent->candidate_pairs[agent->candidate_pairs_num].state = ICE_CANDIDATE_STATE_FROZEN;
+      ice_candidate_pair_print(&agent->candidate_pairs[agent->candidate_pairs_num]);
       agent->candidate_pairs_num++;
     }
   }
@@ -228,7 +244,6 @@ int agent_connectivity_check(Agent *agent) {
   StunMessage msg;
   memset(&msg, 0, sizeof(msg));
   StunHeader *header = (StunHeader *)msg.buf;
-
 
     if (agent->nominated_pair->state == ICE_CANDIDATE_STATE_WAITING) {
 
@@ -278,10 +293,10 @@ void agent_select_candidate_pair(Agent *agent) {
 
   time_t t2 = time(NULL);
 
-  //LOGD("Mode: %d", agent->mode);
-
+  LOGD("Mode: %d", agent->mode);
   for (i = 0; i < agent->candidate_pairs_num; i++) {
 
+    ice_candidate_pair_print(&agent->candidate_pairs[i]);
     if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_FROZEN) {
 
       // nominate this pair
@@ -292,20 +307,20 @@ void agent_select_candidate_pair(Agent *agent) {
 
     } else if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_INPROGRESS
      && (t2 - agent->candidate_pairs[i].nominated_time) > 2) {
-
-      LOGD("timeout for nominate (pair %d)", i);
       agent->nominated_pair->state = ICE_CANDIDATE_STATE_FAILED;
+      LOGD("timeout for nominate (pair %d)", i);
+      ice_candidate_pair_print(&agent->candidate_pairs[i]);
 
     } else if (agent->candidate_pairs[i].state == ICE_CANDIDATE_STATE_FAILED) {
 
     } else if (agent->candidate_pairs[i].state <= ICE_CANDIDATE_STATE_SUCCEEDED) {
       // still in progress. wait for it 
       agent->nominated_pair = &agent->candidate_pairs[i];
+      ice_candidate_pair_print(agent->nominated_pair);
       break;
     }
 
   }
-
   //LOGD("nominated_pair: %p", agent->nominated_pair);
 }
 

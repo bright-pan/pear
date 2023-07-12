@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "config.h"
 #include "address.h"
 
 typedef struct StunHeader StunHeader;
@@ -47,9 +48,12 @@ typedef enum StunAttrType {
   STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS = 0x0020,
   STUN_ATTR_TYPE_PRIORITY = 0x0024,
   STUN_ATTR_TYPE_USE_CANDIDATE = 0x0025,
+  STUN_ATTR_TYPE_SOFTWARE = 0x8022,
   STUN_ATTR_TYPE_FINGERPRINT = 0x8028,
   STUN_ATTR_TYPE_ICE_CONTROLLED = 0x8029,
   STUN_ATTR_TYPE_ICE_CONTROLLING = 0x802a,
+  STUN_ATTR_TYPE_OTHER_ADDRESS = 0x802c,
+  STUN_ATTR_TYPE_RESPONSE_ORIGIN = 0x802b,
   // https://datatracker.ietf.org/doc/html/draft-thatcher-ice-network-cost-00
   STUN_ATTR_TYPE_NETWORK_COST = 0xc057,
 } StunAttrType;
@@ -92,6 +96,8 @@ void stun_parse_binding_response(char *attr_buf, size_t len, Address *addr);
 void stun_parse_msg_buf(StunMessage *msg);
 
 int stun_get_local_address(const char *stun_server, int stun_port, Address *addr);
+
+int stun_get_local_address_ex(const char *stun_server, int stun_port, Address *addr);
 
 void stun_calculate_fingerprint(char *buf, size_t len, uint32_t *fingerprint);
 

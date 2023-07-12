@@ -88,6 +88,7 @@ int agent_send(Agent *agent, const uint8_t *buf, int len);
 int agent_recv(Agent *agent, uint8_t *buf, int len);
 
 void agent_set_remote_description(Agent *agent, char *description);
+void agent_add_remote_candidate(Agent *agent, char *candidate_string);
 
 void *agent_thread(void *arg);
 

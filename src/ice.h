@@ -72,4 +72,7 @@ int ice_candidate_from_description(IceCandidate *candidate, char *description);
 
 int ice_candidate_get_local_address(IceCandidate *candidate, Address *address);
 
+void ice_candidate_pair_print(IceCandidatePair *candidate_pair);
+void ice_candidate_print(IceCandidate *candidate);
+
 #endif // ICE_H_

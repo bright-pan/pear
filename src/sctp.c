@@ -9,6 +9,7 @@
 
 #include "dtls_srtp.h"
 #include "utils.h"
+#include "log.h"
 
 #define DATA_CHANNEL_PPID_CONTROL           50
 #define DATA_CHANNEL_PPID_DOMSTRING         51
@@ -113,7 +114,7 @@ static int sctp_outgoing_data_cb(void *userdata, void *buf, size_t len, uint8_t 
   return 0;
 }
 
-int sctp_outgoing_data(Sctp *sctp, char *buf, size_t len, SctpDataPpid ppid) {
+int sctp_outgoing_data(Sctp *sctp, uint8_t *buf, size_t len, SctpDataPpid ppid) {
 
 #ifdef HAVE_USRSCTP
   struct sctp_sendv_spa spa = {0};
@@ -180,7 +181,15 @@ int sctp_outgoing_data(Sctp *sctp, char *buf, size_t len, SctpDataPpid ppid) {
 #endif
   return len;
 }
+/*
+static int sctp_outgoing_data_cb(void *userdata, void *buf, size_t len, uint8_t tos, uint8_t set_df) {
 
+  Sctp *sctp = (Sctp*)userdata;
+
+  dtls_srtp_write(sctp->dtls_srtp, (const unsigned char*)buf, len);
+  return 0;
+}
+*/
 void sctp_incoming_data(Sctp *sctp, char *buf, size_t len) {
 
   if(!sctp)
@@ -334,6 +343,7 @@ void sctp_incoming_data(Sctp *sctp, char *buf, size_t len) {
 
 }
 
+/*
 static int sctp_handle_incoming_data(Sctp *sctp, char *data, size_t len, uint32_t ppid, uint16_t stream, int flags) {
 
 #ifdef HAVE_USRSCTP
@@ -370,7 +380,7 @@ static int sctp_handle_incoming_data(Sctp *sctp, char *data, size_t len, uint32_
 #endif
   return 0;
 }
-
+*/
 
 #ifdef HAVE_USRSCTP
 static int sctp_incoming_data_cb(struct socket *sock, union sctp_sockstore addr,

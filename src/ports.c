@@ -1,9 +1,16 @@
 #include <string.h>
 #include <sys/types.h>
-#include <net/if.h>
+// #include <net/if.h>
 
-#ifdef ESP32
-#include <mdns.h>
+#ifdef CONFIG_USE_ALIOS
+#include <string.h>
+#include <lwip/opt.h>
+#include <lwip/sockets.h>
+#include <lwip/sys.h>
+#include <lwip/api.h>
+
+#include <lwip/inet.h>
+#include <lwip/netdb.h>
 #else
 #include <arpa/inet.h>
 #include <ifaddrs.h>
@@ -14,6 +21,7 @@
 
 #include "ports.h"
 #include "utils.h"
+#include "log.h"
 
 static char g_current_ip[INET_ADDRSTRLEN] = {0};
 
@@ -23,15 +31,38 @@ void ports_set_current_ip(const char *ip) {
 }
 
 int ports_get_current_ip(UdpSocket *udp_socket, Address *addr) {
+  int ret;
 
-  int ret = 0;
+#ifdef CONFIG_USE_ALIOS
 
-#ifdef ESP32
-  struct sockaddr_in sa;
+  if (udp_socket->fd < 0) {
 
-  inet_pton(AF_INET, g_current_ip, &(sa.sin_addr));
+    LOGE("get_host_address before socket init");
+    return -1;
+  }
 
-  memcpy(addr->ipv4, &sa.sin_addr.s_addr, 4);
+  struct sockaddr_in sin;
+
+  socklen_t len = sizeof(sin);
+
+  if (udp_socket->fd < 0) {
+    LOGE("Failed to create socket");
+    return -1;
+  }
+
+  if (getsockname(udp_socket->fd, (struct sockaddr *)&sin, &len) < 0) {
+    LOGE("Failed to get local address");
+    return -1;
+  }
+
+  memcpy(addr->ipv4, &sin.sin_addr.s_addr, 4);
+
+  addr->port = ntohs(sin.sin_port);
+
+  addr->family = AF_INET;
+
+  LOGD("local port: %d", addr->port);
+  LOGD("local address: %d.%d.%d.%d", addr->ipv4[0], addr->ipv4[1], addr->ipv4[2], addr->ipv4[3]);
 
   ret = 1;
 #else
@@ -80,37 +111,16 @@ int ports_resolve_mdns_host(const char *host, Address *addr) {
 
   int ret = -1;
 
-#ifdef ESP32
-
-  struct esp_ip4_addr esp_addr;
-  char host_name[64] = {0};
-  char *pos = strstr(host, ".local"); 
-  snprintf(host_name, pos - host + 1, "%s", host);
-  esp_addr.addr = 0;
-    
-  esp_err_t err = mdns_query_a(host_name, 2000,  &esp_addr);
-  if (err) {
-    if (err == ESP_ERR_NOT_FOUND) {
-      LOGW("%s: Host was not found!", esp_err_to_name(err));
-      return ret;
-    }
-    LOGE("Query Failed: %s", esp_err_to_name(err));
-      return ret;
-  }
-
-  memcpy(addr->ipv4, &esp_addr.addr, 4);
-
-#else
   struct addrinfo hints, *res, *p;
   int status;
-  char ipstr[INET6_ADDRSTRLEN];
+  char ipstr[INET_ADDRSTRLEN];
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_STREAM;
 
   if ((status = getaddrinfo(host, NULL, &hints, &res)) != 0) {
     //LOGE("getaddrinfo error: %s\n", gai_strerror(status));
-    LOGE("getaddrinfo error: %d\n", status);
+    LOGE("getaddrinfo error: host:%s, %d\n", host, status);
     return ret;
   }
 
@@ -124,7 +134,6 @@ int ports_resolve_mdns_host(const char *host, Address *addr) {
   }
 
   freeaddrinfo(res); 
-#endif
 
   return ret;
 }

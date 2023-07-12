@@ -169,7 +169,7 @@ int sctp_is_connected(Sctp *sctp);
 
 void sctp_incoming_data(Sctp *sctp, char *buf, size_t len);
 
-int sctp_outgoing_data(Sctp *sctp, char *buf, size_t len, SctpDataPpid ppid);
+int sctp_outgoing_data(Sctp *sctp, uint8_t *buf, size_t len, SctpDataPpid ppid);
 
 void sctp_onmessage(Sctp *sctp, void (*onmessasge)(char *msg, size_t len, void *userdata));
 

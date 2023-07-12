@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/socket.h>
-#include <netdb.h>
-#include <arpa/inet.h>
+//#include <sys/socket.h>
+//#include <netdb.h>
+//#include <arpa/inet.h>
 #include <stdint.h>
+#include <time.h>
 #include <string.h>
 #include "utils.h"
 #include "mbedtls/md.h"

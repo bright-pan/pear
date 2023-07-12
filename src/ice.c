@@ -8,6 +8,7 @@
 #include "udp.h"
 #include "utils.h"
 #include "ice.h"
+#include "log.h"
 
 static void ice_candidate_calculate_priority(IceCandidate *candidate) {
 
@@ -82,15 +83,34 @@ void ice_candidate_to_description(IceCandidate *candidate, char *description, in
    typ_raddr);
 }
 
+void ice_candidate_print(IceCandidate *candidate) {
+  LOGW("candidate addr->%d,%d,%d,%d:%d", candidate->addr.ipv4[0], candidate->addr.ipv4[1], 
+      candidate->addr.ipv4[2], candidate->addr.ipv4[3], candidate->addr.port);
+  LOGW("candidate raddr->%d,%d,%d,%d:%d", candidate->raddr.ipv4[0], candidate->raddr.ipv4[1], 
+      candidate->raddr.ipv4[2], candidate->raddr.ipv4[3], candidate->raddr.port);
+}
+
+void ice_candidate_pair_print(IceCandidatePair *candidate_pair) {
+  LOGW("candidate_pair->priority=%d, state=%d, nominated_time=%d", candidate_pair->priority, candidate_pair->state, candidate_pair->nominated_time);
+  LOGW("---------------local----------------");
+  ice_candidate_print(candidate_pair->local);
+  LOGW("---------------remote---------------");
+  ice_candidate_print(candidate_pair->remote);
+}
+
 int ice_candidate_from_description(IceCandidate *candidate, char *description) {
 
   char type[16];
+
+  if (description[0] == 'a' && description[1] == '=' ) {
+    description += 2;
+  }
 
   if (strstr(description, "local") != 0) {
 
     // test for mDNS
     char mdns[64];
-    sscanf(description, "a=candidate:%d %d %s %" SCNu32 " %s %hd typ %s",
+    sscanf(description, "candidate:%d %d %s %" SCNu32 " %s %hd typ %s",
      &candidate->foundation,
      &candidate->component,
      candidate->transport,
@@ -104,7 +124,7 @@ int ice_candidate_from_description(IceCandidate *candidate, char *description) {
   } else if (strstr(description, "UDP") == 0 && strstr(description, "udp") == 0) {
     // Only accept UDP candidates
     return -1;
-  } else if (sscanf(description, "a=candidate:%d %d %s %" SCNu32 " %hhu.%hhu.%hhu.%hhu %hd typ %s",
+  } else if (sscanf(description, "candidate:%d %d %s %" SCNu32 " %hhu.%hhu.%hhu.%hhu %hd typ %s",
    &candidate->foundation,
    &candidate->component,
    candidate->transport,

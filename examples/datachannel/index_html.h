@@ -16,7 +16,7 @@ const char index_html[] = " \
     <input type='submit' value='Send' onclick='sendMessage()'> \n \
     <script> \n \
       var pc = new RTCPeerConnection({ \n \
-        iceServers: [{urls: 'stun:stun.l.google.com:19302'}] \n \
+        iceServers: [{urls: 'stun:test.funlink.cloud:3478'}] \n \
       }); \n \
       var log = msg => { console.log(msg); }; \n \
       function sendOfferToCall(sdp) { \n \

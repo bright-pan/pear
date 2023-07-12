@@ -2,6 +2,7 @@
 #include <stdarg.h>
 
 #include "sdp.h"
+#include "log.h"
 
 int sdp_append(Sdp *sdp, const char *format, ...) {
 

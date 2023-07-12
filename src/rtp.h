@@ -2,7 +2,7 @@
 #define RTP_H_
 
 #include <stdint.h>
-#include <endian.h>
+//#include <endian.h>
 
 #include "codec.h"
 #include "config.h"
@@ -31,14 +31,14 @@ typedef enum RtpSsrc {
 } RtpSsrc;
 
 typedef struct RtpHeader {
-#if __BYTE_ORDER == __BIG_ENDIAN
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
   uint16_t version:2;
   uint16_t padding:1;
   uint16_t extension:1;
   uint16_t csrccount:4;
   uint16_t markerbit:1;
   uint16_t type:7;
-#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   uint16_t csrccount:4;
   uint16_t extension:1;
   uint16_t padding:1;

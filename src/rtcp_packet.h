@@ -2,7 +2,7 @@
 #define RTCP_PACKET_H_
 
 #include <stdint.h>
-#include <endian.h>
+//#include <endian.h>
 
 typedef enum RtcpType {
 
@@ -20,12 +20,12 @@ typedef enum RtcpType {
 
 typedef struct RtcpHeader {
 
-#if __BYTE_ORDER == __BIG_ENDIAN
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   uint16_t version:2;
   uint16_t padding:1;
   uint16_t rc:5;
   uint16_t type:8;
-#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#elif __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   uint16_t rc:5;
   uint16_t padding:1;
   uint16_t version:2;

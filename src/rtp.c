@@ -4,6 +4,7 @@
 
 #include "rtp.h"
 #include "utils.h"
+#include "log.h"
 
 int rtp_packet_validate(uint8_t *packet, size_t size) {
 

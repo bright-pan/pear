@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<title>Datachannel</title>
+	<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+
+<body>
+	<label for='msg'>Message:</label><br>
+	<input type='text' id='msg' name='msg'><br><br>
+	<input type='submit' value='Send' onclick='sendMessage()'>
+	<script>
+		// 将在全局初始化一个 mqtt 变量
+		console.log(mqtt)
+		const clientId = 'mqttjs_' + Math.random().toString(16).substr(2, 8)
+
+		const host = 'ws://broker.emqx.io:8083/mqtt'
+
+		const options = {
+			keepalive: 60,
+			clientId: clientId,
+			protocolId: 'MQTT',
+			protocolVersion: 4,
+			clean: true,
+			reconnectPeriod: 1000,
+			connectTimeout: 30 * 1000,
+			will: {
+				topic: 'WillMsg',
+				payload: 'Connection Closed abnormally..!',
+				qos: 0,
+				retain: false
+			},
+		}
+
+		console.log('Connecting mqtt client')
+		const client = mqtt.connect(host, options)
+
+		client.on('error', (err) => {
+			console.log('Connection error: ', err)
+			client.end()
+		})
+
+		client.on('reconnect', () => {
+			console.log('Reconnecting...')
+		})
+	</script>
+	<script>
+		/*
+				var pc = new RTCPeerConnection({ 
+					iceServers: [{urls: 'stun:test.funlink.cloud:3478'}] 
+				}); 
+				var log = msg => { console.log(msg); }; 
+
+				function sendOfferToCall(sdp) { 
+		var xhttp = new XMLHttpRequest(); 
+		xhttp.onreadystatechange = function() { 
+		  if (this.readyState == 4 && this.status == 200) { 
+			let res = JSON.parse(atob(this.responseText)); 
+			console.log(res); 
+			if(res.type == 'answer') { 
+			  pc.setRemoteDescription(new RTCSessionDescription(res)); 
+			} 
+		  } 
+		}; 
+		xhttp.open('POST', '/call/demo'); 
+		xhttp.setRequestHeader('Content-Type', 'plain/text'); 
+		xhttp.send(btoa(JSON.stringify({'type': 'offer', 'sdp': sdp}))); 
+	  } 
+	  const sendChannel = pc.createDataChannel('pear') 
+	  pc.ondatachannel = () => { 
+		console.log('ondatachannel');
+	  } 
+	  sendChannel.onclose = () => console.log('sendChannel has closed'); 
+	  sendChannel.onopen = () => console.log('sendChannel has opened'); 
+	  sendChannel.onmessage = e => log(`Message from DataChannel '${sendChannel.label}' payload '${e.data}'`); 
+	  pc.oniceconnectionstatechange = e => log(pc.iceConnectionState); 
+	  pc.onicecandidate = event => { 
+//        if(event.candidate === null) //sendOfferToCall(pc.localDescription.sdp) 
+	  }; 
+	  pc.createOffer().then(d => pc.setLocalDescription(d)).catch(log); 
+	  setTimeout(function() { sendOfferToCall(pc.localDescription.sdp); }, 1000); 
+	  function sendMessage() { sendChannel.send(document.getElementById('msg').value); } 
+*/
+	</script>
+</body>
+
+</html>

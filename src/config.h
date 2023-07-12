@@ -3,8 +3,9 @@
 
 #define SCTP_MTU (1200)
 #define CONFIG_MTU (1500)
+#define RECV_TIMEOUT (3000)
 
-#ifdef ESP32
+#if defined(ESP32) || defined(CONFIG_USE_ALIOS)
 #define RSA_KEY_LENGTH 512
 #else
 #define HAVE_USRSCTP

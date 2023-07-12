@@ -4,6 +4,7 @@
 
 #include "ports.h"
 #include "peer_connection.h"
+#include "log.h"
 
 #define STATE_CHANGED(pc, curr_state) if(pc->oniceconnectionstatechange && pc->state != curr_state) { pc->oniceconnectionstatechange(curr_state, pc->user_data); pc->state = curr_state; }
 
@@ -156,7 +157,7 @@ int peer_connection_datachannel_send(PeerConnection *pc, char *message, size_t l
     return -1;
   }
 
-  return sctp_outgoing_data(&pc->sctp, message, len, PPID_STRING);
+  return sctp_outgoing_data(&pc->sctp, (uint8_t *)message, len, PPID_STRING);
 }
 
 int peer_connection_datachannel_send_binary(PeerConnection *pc, char *message, size_t len) {
@@ -166,7 +167,7 @@ int peer_connection_datachannel_send_binary(PeerConnection *pc, char *message, s
     return -1;
   }
 
-  return sctp_outgoing_data(&pc->sctp, message, len, PPID_BINARY);
+  return sctp_outgoing_data(&pc->sctp, (uint8_t *)message, len, PPID_BINARY);
 }
 
 static void peer_connection_state_new(PeerConnection *pc) {
@@ -236,19 +237,20 @@ int peer_connection_loop(PeerConnection *pc) {
       break;
 
     case PEER_CONNECTION_CHECKING:
-
       agent_select_candidate_pair(&pc->agent);
+      if (pc->agent.nominated_pair != NULL) {
+        if (agent_connectivity_check(&pc->agent)) {
 
-      if (agent_connectivity_check(&pc->agent)) {
+          LOGD("Connectivity check success. pair: %p", pc->agent.nominated_pair);
 
-        LOGD("Connectivity check success. pair: %p", pc->agent.nominated_pair);
+          STATE_CHANGED(pc, PEER_CONNECTION_CONNECTED);
+          pc->agent.selected_pair = pc->agent.nominated_pair;
+        }
 
-        STATE_CHANGED(pc, PEER_CONNECTION_CONNECTED);
-        pc->agent.selected_pair = pc->agent.nominated_pair;
+        agent_recv(&pc->agent, pc->agent_buf, sizeof(pc->agent_buf));
+      } else {
+        //LOGE("nominated_pair is not exist.");
       }
-
-      agent_recv(&pc->agent, pc->agent_buf, sizeof(pc->agent_buf));
-
       break;
 
     case PEER_CONNECTION_CONNECTED:
@@ -288,7 +290,7 @@ int peer_connection_loop(PeerConnection *pc) {
         if (utils_buffer_pop(pc->video_rb[0], (uint8_t*)&bytes, sizeof(bytes)) > 0) {
           if (utils_buffer_pop(pc->video_rb[1], pc->agent_buf, bytes) > 0) {
             peer_connection_send_rtp_packet(pc, pc->agent_buf, bytes);
-	  }
+         }
         }
         if (utils_buffer_pop(pc->data_rb[0], (uint8_t*)&bytes, sizeof(bytes)) > 0) {
           if (utils_buffer_pop(pc->data_rb[1], pc->agent_buf, bytes) > 0) {
@@ -350,10 +352,11 @@ void peer_connection_set_remote_description(PeerConnection *pc, const char *sdp_
   STATE_CHANGED(pc, PEER_CONNECTION_CHECKING);
 }
 
-void peer_connection_create_offer(PeerConnection *pc) {
+char *peer_connection_create_offer(PeerConnection *pc) {
 
   STATE_CHANGED(pc, PEER_CONNECTION_NEW);
   pc->b_offer_created = 0;
+  return pc->remote_sdp.content;
 }
 
 int peer_connection_send_rtp_packet(PeerConnection *pc, uint8_t *packet, int bytes) {

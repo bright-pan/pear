@@ -96,7 +96,7 @@ void peer_connection_init(PeerConnection *pc);
 
 void peer_connection_set_remote_description(PeerConnection *pc, const char *sdp);
 
-void peer_connection_create_offer(PeerConnection *pc);
+char *peer_connection_create_offer(PeerConnection *pc);
 
 int peer_connection_loop(PeerConnection *pc);
 

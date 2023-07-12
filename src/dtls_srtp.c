@@ -9,20 +9,22 @@
 #include "udp.h"
 #include "config.h"
 #include "utils.h"
+#include "log.h"
 
 int dtls_srtp_udp_send(void *ctx, const uint8_t *buf, size_t len) {
 
   DtlsSrtp *dtls_srtp = (DtlsSrtp *) ctx;
   UdpSocket *udp_socket = (UdpSocket*)dtls_srtp->user_data;
 
-  int ret = udp_socket_sendto(udp_socket, dtls_srtp->remote_addr, buf, len);
+  // int ret = udp_socket_send(udp_socket, buf, len);
+  int ret = udp_socket_sendto(udp_socket, &udp_socket->sendto_addr, buf, len);
 
-  LOGD("dtls_srtp_udp_send (%d)", ret);
+  //LOGD("dtls_srtp_udp_send (%d)", ret);
 
   return ret;
 }
 
-int dtls_srtp_udp_recv(void *ctx, uint8_t *buf, size_t len) {
+int dtls_srtp_udp_recv(void *ctx, unsigned char *buf, size_t len) {
 
   DtlsSrtp *dtls_srtp = (DtlsSrtp *) ctx;
   UdpSocket *udp_socket = (UdpSocket*)dtls_srtp->user_data;
@@ -34,11 +36,23 @@ int dtls_srtp_udp_recv(void *ctx, uint8_t *buf, size_t len) {
     usleep(1000);
   }
 
-  LOGD("dtls_srtp_udp_recv (%d)", ret);
+  //LOGD("dtls_srtp_udp_recv (%d)", ret);
 
   return ret;
 }
+/*
+int dtls_srtp_udp_recv_timeout(void *ctx, unsigned char *buf, size_t len, uint32_t timeout) {
 
+  DtlsSrtp *dtls_srtp = (DtlsSrtp *) ctx;
+  UdpSocket *udp_socket = (UdpSocket*)dtls_srtp->user_data;
+
+  int ret = mbedtls_net_recv_timeout(udp_socket, buf, len, timeout);
+
+  //LOGD("dtls_srtp_udp_recv (%d)", ret);
+
+  return ret;
+}
+*/
 static void dtls_srtp_x509_digest(const mbedtls_x509_crt *crt, char *buf) {
 
   int i;
@@ -65,6 +79,25 @@ static int dtls_srtp_cert_verify(void *data, mbedtls_x509_crt *crt, int depth, u
 
   *flags &= ~(MBEDTLS_X509_BADCERT_NOT_TRUSTED | MBEDTLS_X509_BADCERT_CN_MISMATCH);
   return 0;
+}
+
+void dtls_srtp_ssl_dbg_init(DtlsSrtp *dtls_srtp, int enable, int level) {
+    LOGI("init ssl debug: %s, level=%d", enable ? "on": "off", level);
+    dtls_srtp->ssl_debug_enable = enable;
+    dtls_srtp->ssl_debug_level = level;
+}
+
+
+static void dtls_libsrtp_init(void) {
+  static int flag = 0;
+  if (!flag) {
+    flag = 1;
+    if (srtp_init() != srtp_err_status_ok) {
+      LOGE("libsrtp init failed");
+    } else {
+      LOGI("libsrtp init success");
+    }
+  }
 }
 
 static int dtls_srtp_selfsign_cert(DtlsSrtp *dtls_srtp) {
@@ -153,6 +186,13 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, DtlsSrtpRole role, void *user_data) {
 
   dtls_srtp_selfsign_cert(dtls_srtp);
 
+#if defined(MBEDTLS_DEBUG_C)
+  if (dtls_srtp->ssl_debug_enable) {
+    mbedtls_ssl_conf_dbg(&dtls_srtp->conf, _ssl_debug, NULL);
+    mbedtls_debug_set_threshold(dtls_srtp->ssl_debug_level);
+  }
+#endif
+
   mbedtls_ssl_conf_verify(&dtls_srtp->conf, dtls_srtp_cert_verify, NULL);
 
   mbedtls_ssl_conf_authmode(&dtls_srtp->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
@@ -195,11 +235,9 @@ int dtls_srtp_init(DtlsSrtp *dtls_srtp, DtlsSrtpRole role, void *user_data) {
   mbedtls_ssl_conf_srtp_mki_value_supported(&dtls_srtp->conf, MBEDTLS_SSL_DTLS_SRTP_MKI_UNSUPPORTED);
 
   mbedtls_ssl_setup(&dtls_srtp->ssl, &dtls_srtp->conf);
+  mbedtls_ssl_set_hostname(&dtls_srtp->ssl, "dtls_srtp");
 
-  if(srtp_init() != srtp_err_status_ok) {
-
-    LOGE("libsrtp init failed");
-  }
+  dtls_libsrtp_init();
 
   return 0;
 }
@@ -291,13 +329,13 @@ static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type 
   dtls_srtp->remote_policy.key = dtls_srtp->remote_policy_key;
   dtls_srtp->remote_policy.next = NULL;
 
-  if (srtp_create(&dtls_srtp->srtp_in, &dtls_srtp->remote_policy) != srtp_err_status_ok) {
+  if ((ret = srtp_create(&dtls_srtp->srtp_in, &dtls_srtp->remote_policy)) != srtp_err_status_ok) {
 
-    LOGD("Error creating inbound SRTP session for component");
+    LOGE("Error creating inbound SRTP session, ret=-%d", ret);
     return;
+  } else {
+    LOGI("Created inbound SRTP session");
   }
-
-  LOGI("Created inbound SRTP session");
 
   // derive outbounds keys
   memset(&dtls_srtp->local_policy, 0, sizeof(dtls_srtp->local_policy));
@@ -312,28 +350,25 @@ static void dtls_srtp_key_derivation(void *context, mbedtls_ssl_key_export_type 
   dtls_srtp->local_policy.key = dtls_srtp->local_policy_key;
   dtls_srtp->local_policy.next = NULL;
 
-  if (srtp_create(&dtls_srtp->srtp_out, &dtls_srtp->local_policy) != srtp_err_status_ok) {
+  if ((ret = srtp_create(&dtls_srtp->srtp_out, &dtls_srtp->local_policy)) != srtp_err_status_ok) {
 
-    LOGE("Error creating outbound SRTP session");
+    LOGE("Error creating outbound SRTP session, ret=-%d", ret);
     return;
+  } else {
+    LOGI("Created outbound SRTP session");
   }
-
-  LOGI("Created outbound SRTP session");
   dtls_srtp->state = DTLS_SRTP_STATE_CONNECTED;
 }
 
 static int dtls_srtp_do_handshake(DtlsSrtp *dtls_srtp) {
 
   int ret;
-  
-  static mbedtls_timing_delay_context timer; 
 
-  mbedtls_ssl_set_timer_cb(&dtls_srtp->ssl, &timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
+  mbedtls_ssl_set_timer_cb(&dtls_srtp->ssl, &dtls_srtp->timer, mbedtls_timing_set_delay, mbedtls_timing_get_delay);
 
   mbedtls_ssl_set_export_keys_cb(&dtls_srtp->ssl, dtls_srtp_key_derivation, dtls_srtp);
 
   mbedtls_ssl_set_bio(&dtls_srtp->ssl, dtls_srtp, dtls_srtp->udp_send, dtls_srtp->udp_recv, NULL);
-  
   do {
 
     ret = mbedtls_ssl_handshake(&dtls_srtp->ssl);
@@ -396,17 +431,16 @@ static int dtls_srtp_handshake_client(DtlsSrtp *dtls_srtp) {
     char vrfy_buf[512];
 #endif
 
-    printf(" failed\n");
+    LOGE(" failed\n");
 
 #if !defined(MBEDTLS_X509_REMOVE_INFO)
     mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
 
-    printf("%s\n", vrfy_buf);
+    LOGE("%s\n", vrfy_buf);
 #endif
+  } else {
+    LOGI("DTLS client handshake done: ret=-0x%x\n\n", (unsigned int) -ret);
   }
-
-  LOGD("DTLS client handshake done");
-
   return ret;
 }
 
@@ -417,7 +451,7 @@ int dtls_srtp_handshake(DtlsSrtp *dtls_srtp, Address *addr) {
 
   const mbedtls_x509_crt *remote_crt;
 
-  dtls_srtp->remote_addr = addr;
+  dtls_srtp->sendto_addr = addr;
 
   if (dtls_srtp->role == DTLS_SRTP_ROLE_SERVER) {
 
@@ -433,12 +467,10 @@ int dtls_srtp_handshake(DtlsSrtp *dtls_srtp, Address *addr) {
 
     dtls_srtp_x509_digest(remote_crt, dtls_srtp->remote_fingerprint);
 
-    LOGD("remote fingerprint: %s", dtls_srtp->remote_fingerprint);
+    LOGI("remote fingerprint: %s", dtls_srtp->remote_fingerprint);
 
   } else {
-
-    LOGE("no remote fingerprint");
-
+    LOGE("no remote fingerprint: ret=-0x%x\n\n", (unsigned int) -ret);
   }
 
   mbedtls_dtls_srtp_info dtls_srtp_negotiation_result;
@@ -463,6 +495,7 @@ int dtls_srtp_write(DtlsSrtp *dtls_srtp, const unsigned char *buf, size_t len) {
 
   int ret;
 
+  LOGI("dtls_srtp_write %s", buf);
   do {
 
     ret = mbedtls_ssl_write(&dtls_srtp->ssl, buf, len);

@@ -12,9 +12,11 @@
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/x509_csr.h>
 #include <mbedtls/timing.h>
+#include <mbedtls/debug.h>
 
 #include <srtp.h>
 
+#include "config.h"
 #include "udp.h"
 #include "address.h"
 
@@ -32,12 +34,24 @@ typedef enum DtlsSrtpRole {
 
 typedef enum DtlsSrtpState {
 
+  DTLS_SRTP_STATE_UNINIT = 0,
   DTLS_SRTP_STATE_INIT,
   DTLS_SRTP_STATE_HANDSHAKE,
   DTLS_SRTP_STATE_CONNECTED
 
 } DtlsSrtpState;
 
+typedef int dtls_srtp_send_t(void *ctx,
+                              const unsigned char *buf,
+                              size_t len);
+
+typedef int dtls_srtp_recv_t(void *ctx,
+                              unsigned char *buf,
+                              size_t len);
+typedef int dtls_srtp_recv_timeout_t(void *ctx,
+                                      unsigned char *buf,
+                                      size_t len,
+                                      uint32_t timeout);
 typedef struct DtlsSrtp {
 
   // MbedTLS
@@ -57,21 +71,31 @@ typedef struct DtlsSrtp {
   unsigned char remote_policy_key[SRTP_MASTER_KEY_LENGTH + SRTP_MASTER_SALT_LENGTH];
   unsigned char local_policy_key[SRTP_MASTER_KEY_LENGTH + SRTP_MASTER_SALT_LENGTH];
 
+  dtls_srtp_send_t *udp_send;
+  dtls_srtp_recv_t *udp_recv;
+  dtls_srtp_recv_timeout_t *udp_recv_timeout;
 
-  int (*udp_send)(void *ctx, const unsigned char *buf, size_t len);
-  int (*udp_recv)(void *ctx, unsigned char *buf, size_t len);
-
-  Address *remote_addr;
+  Address *sendto_addr;
+  Address *local_addr;
 
   DtlsSrtpRole role;
   DtlsSrtpState state;
+  int srtp_init_state;
 
   char local_fingerprint[DTLS_SRTP_FINGERPRINT_LENGTH];
   char remote_fingerprint[DTLS_SRTP_FINGERPRINT_LENGTH];
 
   void *user_data;
 
+  int ssl_debug_enable;
+  int ssl_debug_level;
+
+  mbedtls_timing_delay_context timer; 
+
 } DtlsSrtp;
+
+
+void dtls_srtp_ssl_dbg_init(DtlsSrtp *dtls_srtp, int enable, int level);
 
 int dtls_srtp_init(DtlsSrtp *dtls_srtp, DtlsSrtpRole role, void *user_data);
 

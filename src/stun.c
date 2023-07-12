@@ -7,6 +7,9 @@
 
 #include "utils.h"
 #include "stun.h"
+#include "udp.h"
+#include "ports.h"
+#include "log.h"
 
 uint32_t CRC32_TABLE[256] = {
  0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535,
@@ -125,6 +128,7 @@ void stun_parse_msg_buf(StunMessage *msg) {
 
   int length = ntohs(header->length) + sizeof(StunHeader);
 
+        int attr_length;
   int pos = sizeof(StunHeader);
 
   uint8_t mask[16];
@@ -133,17 +137,18 @@ void stun_parse_msg_buf(StunMessage *msg) {
 
     StunAttribute *attr = (StunAttribute *)(msg->buf + pos);
 
-    //LOGD("Attribute Type: 0x%04x", ntohs(attr->type));
-    //LOGD("Attribute Length: %d", ntohs(attr->length));
+    LOGD("Attribute Type: 0x%04x", ntohs(attr->type));
+    LOGD("Attribute Length: %d", ntohs(attr->length));
 
     switch (ntohs(attr->type)) {
       case STUN_ATTR_TYPE_MAPPED_ADDRESS:
+        memset(mask, 0, sizeof(mask));
         stun_get_mapped_address(attr->value, mask, &msg->mapped_addr);
         break;
       case STUN_ATTR_TYPE_USERNAME:
         memset(msg->username, 0, sizeof(msg->username));
         memcpy(msg->username, attr->value, ntohs(attr->length));
-        //LOGD("length = %d, Username %s", ntohs(attr->length), msg->username);
+        LOGD("length = %d, Username %s", ntohs(attr->length), msg->username);
         break;
       case STUN_ATTR_TYPE_MESSAGE_INTEGRITY:
         memcpy(msg->message_integrity, attr->value, ntohs(attr->length));
@@ -154,7 +159,7 @@ void stun_parse_msg_buf(StunMessage *msg) {
           sprintf(message_integrity_hex + 2*i, "%02x", (uint8_t)msg->message_integrity[i]);
         }
 
-        //LOGD("Message Integrity: 0x%s", message_integrity_hex);
+        LOGD("Message Integrity: 0x%s", message_integrity_hex);
 
         break;
       case STUN_ATTR_TYPE_XOR_MAPPED_ADDRESS:
@@ -164,19 +169,25 @@ void stun_parse_msg_buf(StunMessage *msg) {
       case STUN_ATTR_TYPE_PRIORITY:
         break;
       case STUN_ATTR_TYPE_USE_CANDIDATE:
-        //LOGD("Use Candidate");
+        LOGD("Use Candidate");
         break;
       case STUN_ATTR_TYPE_FINGERPRINT:
         memcpy(&msg->fingerprint, attr->value, ntohs(attr->length));
-        //LOGD("Fingerprint: 0x%.4x", msg->fingerprint);
+        LOGD("Fingerprint: 0x%.4x", msg->fingerprint);
         break;
       case STUN_ATTR_TYPE_ICE_CONTROLLED:
       case STUN_ATTR_TYPE_ICE_CONTROLLING:
       case STUN_ATTR_TYPE_NETWORK_COST:
+      case STUN_ATTR_TYPE_SOFTWARE:
+      case STUN_ATTR_TYPE_RESPONSE_ORIGIN:
+      case STUN_ATTR_TYPE_OTHER_ADDRESS:
         // Do nothing
+        LOGE("Attribute Type: 0x%04x Length: %d", ntohs(attr->type), ntohs(attr->length));
+        LOGE_DUMP_HEX("value: ", attr->value, ntohs(attr->length));
         break;
       default:
-        LOGE("Unknown Attribute Type: 0x%04x", ntohs(attr->type));
+        LOGE("Unknown Attribute Type: 0x%04x Length: %d", ntohs(attr->type), ntohs(attr->length));
+        LOGE_DUMP_HEX("value: ", attr->value, ntohs(attr->length));
         break;
     }
 
@@ -334,6 +345,99 @@ int stun_get_local_address(const char *stun_server, int stun_port, Address *addr
   close(sock);
 
   return ret;
+}
+
+
+int stun_get_local_address_ex(const char *stun_server, int stun_port, Address *addr) {
+
+  UdpSocket udp_socket;
+
+  memset(&udp_socket, 0, sizeof(UdpSocket));
+  udp_socket_reset(&udp_socket);
+  udp_socket_open(&udp_socket);
+  udp_socket.bind_addr.port = stun_port;
+  udp_socket_bind(&udp_socket, &udp_socket.bind_addr);
+
+  ports_resolve_mdns_host(stun_server, &udp_socket.sendto_addr);
+  udp_socket.sendto_addr.port = stun_port;
+  udp_socket_connect(&udp_socket, &udp_socket.sendto_addr);
+
+
+  // int sock = socket(AF_INET, SOCK_DGRAM, 0);
+
+  // if (sock == -1) {
+  //   LOGE("Failed to create socket.");
+  //   return -1;
+
+  // }
+    
+  // struct sockaddr_in server_addr;
+  // memset(&server_addr, 0, sizeof(server_addr));
+  // server_addr.sin_family = AF_INET;
+  // server_addr.sin_addr.s_addr = inet_addr(stun_server);
+  // server_addr.sin_port = htons(stun_port);
+
+  StunMessage msg;
+
+  stun_create_binding_request(&msg);
+
+  LOGD("Sending STUN Binding Request.");
+  // int ret = sendto(sock, msg.buf, msg.size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+  int ret = udp_socket_send(&udp_socket, (uint8_t *)msg.buf, msg.size);
+  if (ret < 0) {
+    LOGE("Failed to send STUN Binding Request: ret=-%04x", ret);
+    return ret;
+  }
+
+  char buf[1024];
+
+  // ret = recvfrom(sock, buf, sizeof(buf), 0, NULL, NULL)
+  ret = udp_socket_recv_timeout(&udp_socket, (uint8_t *)buf, sizeof(buf), RECV_TIMEOUT);
+
+  if (ret < 0) {
+    LOGD("Failed to receive STUN Binding Response: ret=-%04x", ret);
+    return ret;
+  }
+
+  memcpy(msg.buf, buf, ret);
+  stun_parse_msg_buf(&msg);
+  memcpy(addr, &msg.mapped_addr, sizeof(Address));
+#if 0
+  StunHeader *header = (StunHeader *)buf;
+  switch(ntohs(header->type)) {
+
+    case STUN_BINDING_RESPONSE:
+      LOGD("Received STUN Binding Response.");
+      stun_parse_binding_response(buf + sizeof(StunHeader), ntohs(header->length), addr);
+      break;
+    case STUN_BINDING_ERROR_RESPONSE:
+      LOGE("Received STUN Binding Error Response.");
+      return -1;
+      break;
+
+    default:
+      LOGE("Received Unknown STUN Message Type: 0x%04x", ntohs(header->type));
+      return -1;
+      break;
+  }
+#endif
+
+#if 0
+  StunMessage *response;// = malloc(sizeof(StunMessage));
+  response = (StunMessage *)buf;
+  printf("Type: 0x%04x\n", ntohs(response->header.type));
+  if (ntohs(response->header.type) == STUN_BINDING_RESPONSE) {
+
+    LOGD("Received STUN Binding Response.");
+    stun_parse_binding_response(response, addr);
+
+  } else {
+    
+    LOGE("Received STUN Binding Error Response.");
+    return -1;
+  }
+#endif
+  return 0;
 }
 
 void stun_calculate_fingerprint(char *buf, size_t len, uint32_t *fingerprint) {
